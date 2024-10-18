@@ -1,5 +1,4 @@
 # создаем простое streamlit приложение для работы с вашими pdf-файлами при помощи YaGPT
-
 import logging
 import os
 import tempfile
@@ -18,7 +17,7 @@ from yandex_chain import YandexEmbeddings, YandexLLM
 # Настройка логирования
 logging.basicConfig(level=logging.INFO)
 logger = logging.getLogger(__name__)
-
+temp_cert_path = None
 ROOT_DIRECTORY = '.'
 
 # использовать системные переменные из облака streamlit (secrets)
@@ -28,6 +27,14 @@ mdb_os_pwd = st.secrets['mdb_os_pwd']
 mdb_os_hosts = st.secrets['mdb_os_hosts'].split(',')
 mdb_os_index_name = st.secrets['mdb_os_index_name']
 MDB_OS_CA = st.secrets['mdb_os_ca']
+
+
+def get_temp_cert_path(cert_content):
+    with tempfile.NamedTemporaryFile(
+        mode='w', delete=False, suffix='.crt'
+    ) as temp_cert:
+        temp_cert.write(cert_content)
+        return temp_cert.name
 
 
 # Функция для повторных попыток
@@ -107,7 +114,7 @@ def ingest_docs(temp_dir: str = tempfile.gettempdir()):
             ('admin', mdb_os_pwd),
             use_ssl=True,
             verify_certs=True,
-            ca_certs=MDB_OS_CA,
+            ca_certs=temp_cert_path,
         )
 
         # инициируем процедуру превращения блоков текста в Embeddings через YaGPT Embeddings API, используя API ключ доступа
@@ -122,7 +129,7 @@ def ingest_docs(temp_dir: str = tempfile.gettempdir()):
                 http_auth=('admin', mdb_os_pwd),
                 use_ssl=True,
                 verify_certs=True,
-                ca_certs=MDB_OS_CA,
+                ca_certs=temp_cert_path,
                 engine='lucene',
                 index_name=mdb_os_index_name,
                 bulk_size=1000000,
@@ -142,6 +149,10 @@ def ingest_docs(temp_dir: str = tempfile.gettempdir()):
 
 # это основная функция, которая запускает приложение streamlit
 def main():
+    global MDB_OS_CA
+    temp_cert_path = get_temp_cert_path(MDB_OS_CA)
+    global temp_cert_path
+
     # Загрузка логотипа компании
     logo_image = './images/logo.png'  # Путь к изображению логотипа
 
@@ -259,7 +270,7 @@ def main():
             ('admin', mdb_os_pwd),
             use_ssl=True,
             verify_certs=True,
-            ca_certs=MDB_OS_CA,
+            ca_certs=temp_cert_path,
         )
 
         # инициализировать модели YandexEmbeddings и YandexGPT
@@ -281,7 +292,7 @@ def main():
             http_auth=('admin', mdb_os_pwd),
             use_ssl=True,
             verify_certs=True,
-            ca_certs=MDB_OS_CA,
+            ca_certs=temp_cert_path,
             engine='lucene',
         )
 
