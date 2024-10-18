@@ -33,69 +33,64 @@ def ingest_docs(temp_dir: str = tempfile.gettempdir()):
     """
     Инъекция ваших pdf файлов в MBD Opensearch
     """
-    try:
-        # выдать ошибку, если каких-то переменных не хватает
-        if (
-            not yagpt_api_key
-            or not yagpt_folder_id
-            or not mdb_os_pwd
-            or not mdb_os_hosts
-            or not mdb_os_index_name
-        ):
-            raise ValueError(
-                'Пожалуйста укажите необходимый набор переменных окружения'
-            )
-
-        # загрузить PDF файлы из временной директории
-        loader = DirectoryLoader(
-            temp_dir, glob='**/*.pdf', loader_cls=PyPDFLoader, recursive=True
-        )
-        documents = loader.load()
-
-        # разбиваем документы на блоки
-        text_splitter = RecursiveCharacterTextSplitter(
-            chunk_size=chunk_size, chunk_overlap=chunk_overlap
-        )
-        documents = text_splitter.split_documents(documents)
-        print(len(documents))
-        text_to_print = f'Ориентировочное время = {len(documents)} с.'
-        st.text(text_to_print)
-
-        # подключаемся к базе данных MDB Opensearch, используя наши ключи (проверка подключения)
-        conn = OpenSearch(
-            mdb_os_hosts,
-            http_auth=('admin', mdb_os_pwd),
-            use_ssl=True,
-            verify_certs=True,
-            ca_certs=MDB_OS_CA,
-        )
-        # для включения проверки MDB сертификата используйте verify_certs=True, также надо будет загрузить сертификат используя инструкцию по ссылке
-        # https://cloud.yandex.ru/docs/managed-opensearch/operations/connect
-        # и положить его в папку .opensearch/root.crt
-
-        # инициируем процедуру превращения блоков текста в Embeddings через YaGPT Embeddings API, используя API ключ доступа
-        embeddings = YandexEmbeddings(
-            folder_id=yagpt_folder_id,
-            iam_token=yagpt_api_key,
+    if (
+        not yagpt_api_key
+        or not yagpt_folder_id
+        or not mdb_os_pwd
+        or not mdb_os_hosts
+        or not mdb_os_index_name
+    ):
+        raise ValueError(
+            'Пожалуйста укажите необходимый набор переменных окружения'
         )
 
-        # добавляем "документы" (embeddings) в векторную базу данных Opensearch
-        docsearch = OpenSearchVectorSearch.from_documents(
-            documents,
-            embeddings,
-            opensearch_url=mdb_os_hosts,
-            http_auth=('admin', mdb_os_pwd),
-            use_ssl=True,
-            verify_certs=True,
-            ca_certs=MDB_OS_CA,
-            engine='lucene',
-            index_name=mdb_os_index_name,
-            bulk_size=1000000,
-        )
+    # загрузить PDF файлы из временной директории
+    loader = DirectoryLoader(
+        temp_dir, glob='**/*.pdf', loader_cls=PyPDFLoader, recursive=True
+    )
+    documents = loader.load()
+
+    # разбиваем документы на блоки
+    text_splitter = RecursiveCharacterTextSplitter(
+        chunk_size=chunk_size, chunk_overlap=chunk_overlap
+    )
+    documents = text_splitter.split_documents(documents)
+    print(len(documents))
+    text_to_print = f'Ориентировочное время = {len(documents)} с.'
+    st.text(text_to_print)
+
+    # подключаемся к базе данных MDB Opensearch, используя наши ключи (проверка подключения)
+    conn = OpenSearch(
+        mdb_os_hosts,
+        http_auth=('admin', mdb_os_pwd),
+        use_ssl=True,
+        verify_certs=True,
+        ca_certs=MDB_OS_CA,
+    )
+    # для включения проверки MDB сертификата используйте verify_certs=True, также надо будет загрузить сертификат используя инструкцию по ссылке
+    # https://cloud.yandex.ru/docs/managed-opensearch/operations/connect
+    # и положить его в папку .opensearch/root.crt
+
+    # инициируем процедуру превращения блоков текста в Embeddings через YaGPT Embeddings API, используя API ключ доступа
+    embeddings = YandexEmbeddings(
+        folder_id=yagpt_folder_id,
+        iam_token=yagpt_api_key,
+    )
+
+    # добавляем "документы" (embeddings) в векторную базу данных Opensearch
+    docsearch = OpenSearchVectorSearch.from_documents(
+        documents,
+        embeddings,
+        opensearch_url=mdb_os_hosts,
+        http_auth=('admin', mdb_os_pwd),
+        use_ssl=True,
+        verify_certs=True,
+        ca_certs=MDB_OS_CA,
+        engine='lucene',
+        index_name=mdb_os_index_name,
+        bulk_size=1000000,
+    )
     # bulk_size - это максимальное количество embeddings, которое можно будет поместить в индекс
-
-    except Exception as e:
-        st.error(f'Возникла ошибка при добавлении ваших файлов: {str(e)}')
 
 
 # это основная функция, которая запускает приложение streamlit
