@@ -190,20 +190,17 @@ def main():
     # если файлы загружены, сохраняем их во временную папку и потом заносим в vectorstore
     if uploaded_files:
         # создаем временную папку и сохраняем в ней загруженные файлы
-        try:
-            with tempfile.TemporaryDirectory() as temp_dir:
-                for uploaded_file in uploaded_files:
-                    file_name = uploaded_file.name
-                    # сохраняем файл во временную папку
-                    with open(os.path.join(temp_dir, file_name), 'wb') as f:
-                        f.write(uploaded_file.read())
-                # отображение спиннера во время инъекции файлов
-                with st.spinner('Добавление ваших файлов в базу ...'):
-                    ingest_docs(temp_dir)
-                    st.success('Ваш(и) файл(ы) успешно принят(ы)')
-                    st.session_state['ready'] = True
-        except Exception as e:
-            st.error(f'При загрузке ваших файлов произошла ошибка: {str(e)}')
+        with tempfile.TemporaryDirectory() as temp_dir:
+            for uploaded_file in uploaded_files:
+                file_name = uploaded_file.name
+                # сохраняем файл во временную папку
+                with open(os.path.join(temp_dir, file_name), 'wb') as f:
+                    f.write(uploaded_file.read())
+            # отображение спиннера во время инъекции файлов
+            with st.spinner('Добавление ваших файлов в базу ...'):
+                ingest_docs(temp_dir)
+                st.success('Ваш(и) файл(ы) успешно принят(ы)')
+                st.session_state['ready'] = True
 
     # Логика обработки сообщений от пользователей
     # инициализировать историю чата, если ее пока нет
