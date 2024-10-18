@@ -77,6 +77,7 @@ def ingest_docs(temp_dir: str = tempfile.gettempdir()):
         embeddings = YandexEmbeddings(
             folder_id=yagpt_folder_id, api_key=yagpt_api_key
         )
+        st.echo(embeddings.embed_query('test'))
 
         # добавляем "документы" (embeddings) в векторную базу данных Opensearch
         docsearch = OpenSearchVectorSearch.from_documents(
