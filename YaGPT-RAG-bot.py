@@ -37,12 +37,13 @@ def get_temp_cert_path(cert_content):
         return temp_cert.name
 
 
-# Функция для повторных попыток
 @retry(stop=stop_after_attempt(3), wait=wait_fixed(2))
 def create_embeddings(folder_id, api_key):
     try:
+        logger.info(
+            f'Initializing YandexEmbeddings with folder_id: {folder_id}'
+        )
         embeddings = YandexEmbeddings(folder_id=folder_id, api_key=api_key)
-        # Проверка работоспособности эмбеддингов
         test_embedding = embeddings.embed_query('test')
         logger.info(
             f'Embeddings initialized successfully. Test embedding shape: {len(test_embedding)}'
@@ -50,6 +51,9 @@ def create_embeddings(folder_id, api_key):
         return embeddings
     except Exception as e:
         logger.error(f'Error initializing embeddings: {str(e)}')
+        logger.error(
+            f'folder_id: {folder_id}, api_key: {"*" * len(api_key)}'
+        )  # Маскируем API ключ в логах
         raise
 
 
@@ -151,6 +155,7 @@ def ingest_docs(temp_dir: str = tempfile.gettempdir()):
 def main():
     global MDB_OS_CA, temp_cert_path
     temp_cert_path = get_temp_cert_path(MDB_OS_CA)
+
     # Загрузка логотипа компании
     logo_image = './images/logo.png'  # Путь к изображению логотипа
 
@@ -234,23 +239,26 @@ def main():
         type=['pdf'],
     )
 
-    # если файлы загружены, сохраняем их во временную папку и потом заносим в vectorstore
     if uploaded_files:
-        # создаем временную папку и сохраняем в ней загруженные файлы
         try:
             with tempfile.TemporaryDirectory() as temp_dir:
                 for uploaded_file in uploaded_files:
                     file_name = uploaded_file.name
-                    # сохраняем файл во временную папку
                     with open(os.path.join(temp_dir, file_name), 'wb') as f:
                         f.write(uploaded_file.read())
-                # отображение спиннера во время инъекции файлов
                 with st.spinner('Добавление ваших файлов в базу ...'):
                     ingest_docs(temp_dir)
                     st.success('Ваш(и) файл(ы) успешно принят(ы)')
                     st.session_state['ready'] = True
         except Exception as e:
+            logger.error(
+                f'При загрузке ваших файлов произошла ошибка: {str(e)}'
+            )
             st.error(f'При загрузке ваших файлов произошла ошибка: {str(e)}')
+            st.error(
+                'Пожалуйста, проверьте настройки YaGPT и попробуйте снова.'
+            )
+            st.session_state['ready'] = False
 
     # Логика обработки сообщений от пользователей
     # инициализировать историю чата, если ее пока нет
@@ -262,37 +270,46 @@ def main():
         st.session_state['ready'] = True
 
     if st.session_state['ready']:
-        # подключиться к векторной БД Opensearch, используя учетные данные (проверка подключения)
-        conn = check_opensearch_connection(
-            mdb_os_hosts,
-            ('admin', mdb_os_pwd),
-            use_ssl=True,
-            verify_certs=True,
-            ca_certs=temp_cert_path,
-        )
+        try:
+            conn = check_opensearch_connection(
+                mdb_os_hosts,
+                ('admin', mdb_os_pwd),
+                use_ssl=True,
+                verify_certs=True,
+                ca_certs=temp_cert_path,
+            )
 
-        # инициализировать модели YandexEmbeddings и YandexGPT
-        embeddings = create_embeddings(yagpt_folder_id, yagpt_api_key)
+            embeddings = create_embeddings(yagpt_folder_id, yagpt_api_key)
 
-        # обращение к модели YaGPT
-        llm = YandexLLM(
-            api_key=yagpt_api_key,
-            folder_id=yagpt_folder_id,
-            temperature=yagpt_temp,
-            max_tokens=7000,
-        )
+            llm = YandexLLM(
+                api_key=yagpt_api_key,
+                folder_id=yagpt_folder_id,
+                temperature=yagpt_temp,
+                max_tokens=7000,
+            )
 
-        # инициализация retrival chain - цепочки поиска
-        vectorstore = OpenSearchVectorSearch(
-            embedding_function=embeddings,
-            index_name=mdb_os_index_name,
-            opensearch_url=mdb_os_hosts,
-            http_auth=('admin', mdb_os_pwd),
-            use_ssl=True,
-            verify_certs=True,
-            ca_certs=temp_cert_path,
-            engine='lucene',
-        )
+            vectorstore = OpenSearchVectorSearch(
+                embedding_function=embeddings,
+                index_name=mdb_os_index_name,
+                opensearch_url=mdb_os_hosts,
+                http_auth=('admin', mdb_os_pwd),
+                use_ssl=True,
+                verify_certs=True,
+                ca_certs=temp_cert_path,
+                engine='lucene',
+            )
+
+            # Проверка работоспособности vectorstore
+            test_query = vectorstore.similarity_search('test', k=1)
+            logger.info('Vectorstore successfully initialized and tested')
+
+        except Exception as e:
+            logger.error(f'Error initializing components: {str(e)}')
+            st.error(
+                f'Произошла ошибка при инициализации компонентов: {str(e)}'
+            )
+            st.session_state['ready'] = False
+            return
 
         template = """Представь, что ты полезный ИИ-помощник. Твоя задача отвечать на вопросы на русском языке в рамках предоставленного ниже текста.
         Отвечай точно в рамках предоставленного текста, даже если тебя просят придумать.
