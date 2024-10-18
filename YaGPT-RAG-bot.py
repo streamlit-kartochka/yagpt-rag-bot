@@ -74,7 +74,7 @@ def ingest_docs(temp_dir: str = tempfile.gettempdir()):
     # инициируем процедуру превращения блоков текста в Embeddings через YaGPT Embeddings API, используя API ключ доступа
     embeddings = YandexEmbeddings(
         folder_id=yagpt_folder_id,
-        iam_token=yagpt_api_key,
+        api_key=yagpt_api_key,
     )
 
     # добавляем "документы" (embeddings) в векторную базу данных Opensearch
