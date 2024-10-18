@@ -25,7 +25,7 @@ ROOT_DIRECTORY = "."
 # использовать системные переменные из облака streamlit (secrets)
 yagpt_api_key = st.secrets["yagpt_api_key"]
 yagpt_folder_id = st.secrets["yagpt_folder_id"]
-yagpt_api_id = st.secrets["yagpt_api_id"]
+#yagpt_api_id = st.secrets["yagpt_api_id"]
 mdb_os_pwd = st.secrets["mdb_os_pwd"]
 mdb_os_hosts = st.secrets["mdb_os_hosts"].split(",")
 mdb_os_index_name = st.secrets["mdb_os_index_name"]
