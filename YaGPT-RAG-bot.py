@@ -1,5 +1,5 @@
 # создаем простое streamlit приложение для работы с вашими pdf-файлами при помощи YaGPT
-import logging
+
 import os
 import tempfile
 
@@ -11,70 +11,22 @@ from langchain.text_splitter import RecursiveCharacterTextSplitter
 from langchain.vectorstores import OpenSearchVectorSearch
 from opensearchpy import OpenSearch
 from streamlit_chat import message
-from tenacity import retry, stop_after_attempt, wait_fixed
 from yandex_chain import YandexEmbeddings, YandexLLM
 
-# Настройка логирования
-logging.basicConfig(level=logging.INFO)
-logger = logging.getLogger(__name__)
-temp_cert_path = None
+# from dotenv import load_dotenv
+
 ROOT_DIRECTORY = '.'
+MDB_OS_CA = f'{ROOT_DIRECTORY}/.opensearch/root.crt'
 
 # использовать системные переменные из облака streamlit (secrets)
 yagpt_api_key = st.secrets['yagpt_api_key']
 yagpt_folder_id = st.secrets['yagpt_folder_id']
+yagpt_api_id = st.secrets['yagpt_api_id']
 mdb_os_pwd = st.secrets['mdb_os_pwd']
 mdb_os_hosts = st.secrets['mdb_os_hosts'].split(',')
 mdb_os_index_name = st.secrets['mdb_os_index_name']
-MDB_OS_CA = st.secrets['mdb_os_ca']
 
-
-def get_temp_cert_path(cert_content):
-    with tempfile.NamedTemporaryFile(
-        mode='w', delete=False, suffix='.crt'
-    ) as temp_cert:
-        temp_cert.write(cert_content)
-        return temp_cert.name
-
-
-@retry(stop=stop_after_attempt(3), wait=wait_fixed(2))
-def create_embeddings(folder_id, api_key):
-    try:
-        logger.info(
-            f'Initializing YandexEmbeddings with folder_id: {folder_id}'
-        )
-        embeddings = YandexEmbeddings(folder_id=folder_id, api_key=api_key)
-        test_embedding = embeddings.embed_query('test')
-        logger.info(
-            f'Embeddings initialized successfully. Test embedding shape: {len(test_embedding)}'
-        )
-        return embeddings
-    except Exception as e:
-        logger.error(f'Error initializing embeddings: {str(e)}')
-        logger.error(
-            f'folder_id: {folder_id}, api_key: {"*" * len(api_key)}'
-        )  # Маскируем API ключ в логах
-        raise
-
-
-def check_opensearch_connection(hosts, auth, use_ssl, verify_certs, ca_certs):
-    try:
-        client = OpenSearch(
-            hosts=hosts,
-            http_auth=auth,
-            use_ssl=use_ssl,
-            verify_certs=verify_certs,
-            ca_certs=ca_certs,
-        )
-        # Проверка подключения
-        info = client.info()
-        logger.info(
-            f"Successfully connected to OpenSearch. Cluster name: {info['cluster_name']}"
-        )
-        return client
-    except Exception as e:
-        logger.error(f'Error connecting to OpenSearch: {str(e)}')
-        raise
+# MDB_OS_CA = st.secrets['mdb_os_ca']
 
 
 def ingest_docs(temp_dir: str = tempfile.gettempdir()):
@@ -96,10 +48,7 @@ def ingest_docs(temp_dir: str = tempfile.gettempdir()):
 
         # загрузить PDF файлы из временной директории
         loader = DirectoryLoader(
-            temp_dir,
-            glob='**/*.pdf',
-            loader_cls=PyPDFLoader,
-            recursive=True,
+            temp_dir, glob='**/*.pdf', loader_cls=PyPDFLoader, recursive=True
         )
         documents = loader.load()
 
@@ -113,53 +62,47 @@ def ingest_docs(temp_dir: str = tempfile.gettempdir()):
         st.text(text_to_print)
 
         # подключаемся к базе данных MDB Opensearch, используя наши ключи (проверка подключения)
-        opensearch_client = check_opensearch_connection(
+        conn = OpenSearch(
             mdb_os_hosts,
-            ('admin', mdb_os_pwd),
+            http_auth=('admin', mdb_os_pwd),
             use_ssl=True,
             verify_certs=True,
-            ca_certs=temp_cert_path,
+            ca_certs=MDB_OS_CA,
         )
+        # для включения проверки MDB сертификата используйте verify_certs=True, также надо будет загрузить сертификат используя инструкцию по ссылке
+        # https://cloud.yandex.ru/docs/managed-opensearch/operations/connect
+        # и положить его в папку .opensearch/root.crt
 
         # инициируем процедуру превращения блоков текста в Embeddings через YaGPT Embeddings API, используя API ключ доступа
-        embeddings = create_embeddings(yagpt_folder_id, yagpt_api_key)
+        embeddings = YandexEmbeddings(
+            folder_id=yagpt_folder_id, api_key=yagpt_api_key
+        )
 
         # добавляем "документы" (embeddings) в векторную базу данных Opensearch
-        try:
-            docsearch = OpenSearchVectorSearch.from_documents(
-                documents,
-                embeddings,
-                opensearch_url=mdb_os_hosts,
-                http_auth=('admin', mdb_os_pwd),
-                use_ssl=True,
-                verify_certs=True,
-                ca_certs=temp_cert_path,
-                engine='lucene',
-                index_name=mdb_os_index_name,
-                bulk_size=1000000,
-                client=opensearch_client,  # Используем проверенный клиент
-            )
-            logger.info(
-                f'Successfully created OpenSearchVectorSearch index: {mdb_os_index_name}'
-            )
-        except Exception as e:
-            logger.error(f'Error creating OpenSearchVectorSearch: {str(e)}')
-            raise
+        docsearch = OpenSearchVectorSearch.from_documents(
+            documents,
+            embeddings,
+            opensearch_url=mdb_os_hosts,
+            http_auth=('admin', mdb_os_pwd),
+            use_ssl=True,
+            verify_certs=True,
+            ca_certs=MDB_OS_CA,
+            engine='lucene',
+            index_name=mdb_os_index_name,
+            bulk_size=1000000,
+        )
+    # bulk_size - это максимальное количество embeddings, которое можно будет поместить в индекс
 
     except Exception as e:
-        logger.error(f'Возникла ошибка при добавлении ваших файлов: {str(e)}')
-        raise
+        st.error(f'Возникла ошибка при добавлении ваших файлов: {str(e)}')
 
 
 # это основная функция, которая запускает приложение streamlit
 def main():
-    global MDB_OS_CA, temp_cert_path
-    temp_cert_path = get_temp_cert_path(MDB_OS_CA)
-
     # Загрузка логотипа компании
     logo_image = './images/logo.png'  # Путь к изображению логотипа
 
-    # Отображение логотипа в основной части приложения
+    # # Отображение логотипа в основной части приложения
     from PIL import Image
 
     # Загрузка логотипа
@@ -196,8 +139,17 @@ def main():
         mdb_os_pwd, \
         mdb_os_hosts, \
         mdb_os_index_name
-
+    yagpt_folder_id = st.sidebar.text_input('YAGPT_FOLDER_ID', type='password')
+    # yagpt_api_id = st.sidebar.text_input("YAGPT_API_ID", type='password')
+    yagpt_api_key = st.sidebar.text_input('YAGPT_API_KEY', type='password')
     mdb_os_ca = MDB_OS_CA
+    mdb_os_pwd = st.sidebar.text_input(
+        'MDB_OpenSearch_PASSWORD', type='password'
+    )
+    mdb_os_hosts = st.sidebar.text_input(
+        "MDB_OpenSearch_HOSTS через 'запятую' ", type='password'
+    ).split(',')
+    mdb_os_index_name = st.sidebar.text_input('MDB_OpenSearch_INDEX_NAME')
 
     yagpt_temp = st.sidebar.text_input(
         'Температура', type='password', value=0.01
@@ -239,26 +191,23 @@ def main():
         type=['pdf'],
     )
 
+    # если файлы загружены, сохраняем их во временную папку и потом заносим в vectorstore
     if uploaded_files:
+        # создаем временную папку и сохраняем в ней загруженные файлы
         try:
             with tempfile.TemporaryDirectory() as temp_dir:
                 for uploaded_file in uploaded_files:
                     file_name = uploaded_file.name
+                    # сохраняем файл во временную папку
                     with open(os.path.join(temp_dir, file_name), 'wb') as f:
                         f.write(uploaded_file.read())
+                # отображение спиннера во время инъекции файлов
                 with st.spinner('Добавление ваших файлов в базу ...'):
                     ingest_docs(temp_dir)
                     st.success('Ваш(и) файл(ы) успешно принят(ы)')
                     st.session_state['ready'] = True
         except Exception as e:
-            logger.error(
-                f'При загрузке ваших файлов произошла ошибка: {str(e)}'
-            )
             st.error(f'При загрузке ваших файлов произошла ошибка: {str(e)}')
-            st.error(
-                'Пожалуйста, проверьте настройки YaGPT и попробуйте снова.'
-            )
-            st.session_state['ready'] = False
 
     # Логика обработки сообщений от пользователей
     # инициализировать историю чата, если ее пока нет
@@ -270,46 +219,39 @@ def main():
         st.session_state['ready'] = True
 
     if st.session_state['ready']:
-        try:
-            conn = check_opensearch_connection(
-                mdb_os_hosts,
-                ('admin', mdb_os_pwd),
-                use_ssl=True,
-                verify_certs=True,
-                ca_certs=temp_cert_path,
-            )
+        # подключиться к векторной БД Opensearch, используя учетные данные (проверка подключения)
+        conn = OpenSearch(
+            mdb_os_hosts,
+            http_auth=('admin', mdb_os_pwd),
+            use_ssl=True,
+            verify_certs=True,
+            ca_certs=MDB_OS_CA,
+        )
 
-            embeddings = create_embeddings(yagpt_folder_id, yagpt_api_key)
+        # инициализировать модели YandexEmbeddings и YandexGPT
+        embeddings = YandexEmbeddings(
+            folder_id=yagpt_folder_id, api_key=yagpt_api_key
+        )
 
-            llm = YandexLLM(
-                api_key=yagpt_api_key,
-                folder_id=yagpt_folder_id,
-                temperature=yagpt_temp,
-                max_tokens=7000,
-            )
+        # обращение к модели YaGPT
+        llm = YandexLLM(
+            api_key=yagpt_api_key,
+            folder_id=yagpt_folder_id,
+            temperature=yagpt_temp,
+            max_tokens=7000,
+        )
 
-            vectorstore = OpenSearchVectorSearch(
-                embedding_function=embeddings,
-                index_name=mdb_os_index_name,
-                opensearch_url=mdb_os_hosts,
-                http_auth=('admin', mdb_os_pwd),
-                use_ssl=True,
-                verify_certs=True,
-                ca_certs=temp_cert_path,
-                engine='lucene',
-            )
-
-            # Проверка работоспособности vectorstore
-            test_query = vectorstore.similarity_search('test', k=1)
-            logger.info('Vectorstore successfully initialized and tested')
-
-        except Exception as e:
-            logger.error(f'Error initializing components: {str(e)}')
-            st.error(
-                f'Произошла ошибка при инициализации компонентов: {str(e)}'
-            )
-            st.session_state['ready'] = False
-            return
+        # инициализация retrival chain - цепочки поиска
+        vectorstore = OpenSearchVectorSearch(
+            embedding_function=embeddings,
+            index_name=mdb_os_index_name,
+            opensearch_url=mdb_os_hosts,
+            http_auth=('admin', mdb_os_pwd),
+            use_ssl=True,
+            verify_certs=True,
+            ca_certs=MDB_OS_CA,
+            engine='lucene',
+        )
 
         template = """Представь, что ты полезный ИИ-помощник. Твоя задача отвечать на вопросы на русском языке в рамках предоставленного ниже текста.
         Отвечай точно в рамках предоставленного текста, даже если тебя просят придумать.
@@ -340,6 +282,7 @@ def main():
 
         # контейнер для текстового поля
         container = st.container()
+
         with container:
             with st.form(key='my_form', clear_on_submit=True):
                 user_input = st.text_input(
@@ -350,33 +293,25 @@ def main():
             if submit_button and user_input:
                 # отобразить загрузочный "волчок"
                 with st.spinner('Думаю...'):
-                    try:
-                        logger.info(
-                            f'Обработка запроса пользователя: {user_input}'
-                        )
-                        output = qa({'query': user_input})
-                        logger.info('Ответ успешно сгенерирован')
-                        st.session_state['past'].append(user_input)
-                        st.session_state['generated'].append(output['result'])
+                    print('История чата: ', st.session_state['chat_history'])
+                    output = qa({'query': user_input})
+                    print(output)
+                    st.session_state['past'].append(user_input)
+                    st.session_state['generated'].append(output['result'])
 
-                        # обновляем историю чата с помощью вопроса пользователя и ответа от бота
-                        st.session_state['chat_history'].append(
-                            {'вопрос': user_input, 'ответ': output['result']}
-                        )
-                        ## добавляем источники к ответу
-                        input_documents = output['source_documents']
-                        i = 0
-                        for doc in input_documents:
-                            source = doc.metadata['source']
-                            page_content = doc.page_content
-                            i = i + 1
-                            with st.expander(f'**Источник N{i}:** [{source}]'):
-                                st.write(page_content)
-                    except Exception as e:
-                        logger.error(f'Ошибка при генерации ответа: {str(e)}')
-                        st.error(
-                            f'Произошла ошибка при обработке вашего запроса: {str(e)}'
-                        )
+                    # # обновляем историю чата с помощью вопроса пользователя и ответа от бота
+                    st.session_state['chat_history'].append(
+                        {'вопрос': user_input, 'ответ': output['result']}
+                    )
+                    ## добавляем источники к ответу
+                    input_documents = output['source_documents']
+                    i = 0
+                    for doc in input_documents:
+                        source = doc.metadata['source']
+                        page_content = doc.page_content
+                        i = i + 1
+                        with st.expander(f'**Источник N{i}:** [{source}]'):
+                            st.write(page_content)
 
         if st.session_state['generated']:
             with response_container:
@@ -392,10 +327,8 @@ def main():
 if __name__ == '__main__':
     try:
         main()
-    except Exception as e:
-        error_message = f'Произошла ошибка при выполнении приложения: {str(e)}'
-        logger.error(error_message)
-        st.error(error_message)
+    except Exception:
+        # st.write(f"Что-то пошло не так. Возможно, не хватает входных данных для работы. {str(e)}")
         st.write(
-            'Пожалуйста, проверьте настройки и попробуйте снова. Если проблема сохраняется, обратитесь к администратору.'
+            'Не хватает входных данных для продолжения работы. См. панель слева.'
         )
