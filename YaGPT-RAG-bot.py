@@ -121,13 +121,13 @@ def main():
         ''')
 
     global  yagpt_folder_id, yagpt_api_key, mdb_os_ca, mdb_os_pwd, mdb_os_hosts, mdb_os_index_name    
-    yagpt_folder_id = st.sidebar.text_input("YAGPT_FOLDER_ID", type='password')
+    #yagpt_folder_id = st.sidebar.text_input("YAGPT_FOLDER_ID", type='password')
     # yagpt_api_id = st.sidebar.text_input("YAGPT_API_ID", type='password')
-    yagpt_api_key = st.sidebar.text_input("YAGPT_API_KEY", type='password')
+    #yagpt_api_key = st.sidebar.text_input("YAGPT_API_KEY", type='password')
     mdb_os_ca = MDB_OS_CA
-    mdb_os_pwd = st.sidebar.text_input("MDB_OpenSearch_PASSWORD", type='password')
-    mdb_os_hosts = st.sidebar.text_input("MDB_OpenSearch_HOSTS через 'запятую' ", type='password').split(",")
-    mdb_os_index_name = st.sidebar.text_input("MDB_OpenSearch_INDEX_NAME")
+    #mdb_os_pwd = st.sidebar.text_input("MDB_OpenSearch_PASSWORD", type='password')
+    #mdb_os_hosts = st.sidebar.text_input("MDB_OpenSearch_HOSTS через 'запятую' ", type='password').split(",")
+    #mdb_os_index_name = st.sidebar.text_input("MDB_OpenSearch_INDEX_NAME")
 
     yagpt_temp = st.sidebar.text_input("Температура", type='password', value=0.01)
     rag_k = st.sidebar.text_input("Количество поисковых выдач размером с один блок", type='password', value=5)
