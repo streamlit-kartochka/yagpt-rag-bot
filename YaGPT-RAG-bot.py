@@ -29,8 +29,7 @@ yagpt_folder_id = st.secrets["yagpt_folder_id"]
 mdb_os_pwd = st.secrets["mdb_os_pwd"]
 mdb_os_hosts = st.secrets["mdb_os_hosts"].split(",")
 mdb_os_index_name = st.secrets["mdb_os_index_name"]
-
-# MDB_OS_CA = st.secrets["mdb_os_ca"] # 
+MDB_OS_CA = st.secrets["mdb_os_ca"] 
 
 def ingest_docs(temp_dir: str = tempfile.gettempdir()):
     """
