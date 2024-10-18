@@ -20,15 +20,15 @@ from streamlit_chat import message
 # from dotenv import load_dotenv
 
 ROOT_DIRECTORY = "."
-MDB_OS_CA = f"{ROOT_DIRECTORY}/.opensearch/root.crt"
+# MDB_OS_CA = f"{ROOT_DIRECTORY}/.opensearch/root.crt"
 
 # использовать системные переменные из облака streamlit (secrets)
-# yagpt_api_key = st.secrets["yagpt_api_key"]
-# yagpt_folder_id = st.secrets["yagpt_folder_id"]
-# yagpt_api_id = st.secrets["yagpt_api_id"]
-# mdb_os_pwd = st.secrets["mdb_os_pwd"]
-# mdb_os_hosts = st.secrets["mdb_os_hosts"].split(",")
-# mdb_os_index_name = st.secrets["mdb_os_index_name"]
+yagpt_api_key = st.secrets["yagpt_api_key"]
+yagpt_folder_id = st.secrets["yagpt_folder_id"]
+yagpt_api_id = st.secrets["yagpt_api_id"]
+mdb_os_pwd = st.secrets["mdb_os_pwd"]
+mdb_os_hosts = st.secrets["mdb_os_hosts"].split(",")
+mdb_os_index_name = st.secrets["mdb_os_index_name"]
 
 # MDB_OS_CA = st.secrets["mdb_os_ca"] # 
 
@@ -61,7 +61,7 @@ def ingest_docs(temp_dir: str = tempfile.gettempdir()):
             mdb_os_hosts,
             http_auth=('admin', mdb_os_pwd),
             use_ssl=True,
-            verify_certs=False,
+            verify_certs=True,
             ca_certs=MDB_OS_CA)
         # для включения проверки MDB сертификата используйте verify_certs=True, также надо будет загрузить сертификат используя инструкцию по ссылке 
         # https://cloud.yandex.ru/docs/managed-opensearch/operations/connect 
@@ -77,7 +77,7 @@ def ingest_docs(temp_dir: str = tempfile.gettempdir()):
             opensearch_url=mdb_os_hosts,
             http_auth=("admin", mdb_os_pwd),
             use_ssl = True,
-            verify_certs = False,
+            verify_certs = True,
             ca_certs = MDB_OS_CA,
             engine = 'lucene',
             index_name = mdb_os_index_name,
@@ -182,7 +182,7 @@ def main():
             mdb_os_hosts,
             http_auth=('admin', mdb_os_pwd),
             use_ssl=True,
-            verify_certs=False,
+            verify_certs=True,
             ca_certs=MDB_OS_CA
             )
 
@@ -199,7 +199,7 @@ def main():
             opensearch_url=mdb_os_hosts,
             http_auth=("admin", mdb_os_pwd),
             use_ssl = True,
-            verify_certs = False,
+            verify_certs = True,
             ca_certs = MDB_OS_CA,
             engine = 'lucene'
         )  
